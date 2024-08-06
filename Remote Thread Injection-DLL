@@ -1,0 +1,5 @@
+// Beispielcode für DLL Injection
+HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+LPVOID pRemoteCode = VirtualAllocEx(hProcess, NULL, sizeof(DLL_Path), MEM_COMMIT, PAGE_READWRITE);
+WriteProcessMemory(hProcess, pRemoteCode, (LPVOID)DLL_Path, sizeof(DLL_Path), NULL);
+CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)LoadLibraryA, pRemoteCode, 0, NULL);
