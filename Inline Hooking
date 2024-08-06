@@ -1,0 +1,38 @@
+#include <windows.h>
+#include <stdio.h>
+
+typedef int (WINAPI *MessageBoxA_t)(HWND, LPCSTR, LPCSTR, UINT);
+MessageBoxA_t OriginalMessageBoxA = NULL;
+
+int WINAPI HookedMessageBoxA(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) {
+    return OriginalMessageBoxA(hWnd, "Hooked!", lpCaption, uType);
+}
+
+void HookInline(LPVOID pTargetFunction, LPVOID pHookFunction) {
+    DWORD dwOldProtect;
+    VirtualProtect(pTargetFunction, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect);
+    *(BYTE*)pTargetFunction = 0xE9;
+    *(DWORD*)((BYTE*)pTargetFunction + 1) = (DWORD)pHookFunction - (DWORD)pTargetFunction - 5;
+    VirtualProtect(pTargetFunction, 5, dwOldProtect, &dwOldProtect);
+}
+
+void UnhookInline(LPVOID pTargetFunction, LPVOID pOriginalBytes, SIZE_T size) {
+    DWORD dwOldProtect;
+    VirtualProtect(pTargetFunction, size, PAGE_EXECUTE_READWRITE, &dwOldProtect);
+    memcpy(pTargetFunction, pOriginalBytes, size);
+    VirtualProtect(pTargetFunction, size, dwOldProtect, &dwOldProtect);
+}
+
+int main() {
+    HMODULE hModule = GetModuleHandle(NULL);
+    OriginalMessageBoxA = (MessageBoxA_t)GetProcAddress(GetModuleHandleA("user32.dll"), "MessageBoxA");
+    
+    BYTE originalBytes[5];
+    memcpy(originalBytes, OriginalMessageBoxA, 5);
+    
+    HookInline(OriginalMessageBoxA, HookedMessageBoxA);
+    MessageBoxA(NULL, "Original!", "Test", MB_OK);
+    UnhookInline(OriginalMessageBoxA, originalBytes, 5);
+    
+    return 0;
+}
